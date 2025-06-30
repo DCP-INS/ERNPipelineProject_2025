@@ -1,0 +1,211 @@
+#!/bin/bash
+
+#==============================#
+# EEG Preprocessing Pipeline   #
+#==============================#
+
+# === Environment Setup ===
+# Get the directory where this script lives
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Import the different functions
+source "$SCRIPT_DIR/init_paths.sh"
+source "$BASH_LIBRARIES/utils.sh"
+source "$BASH_LIBRARIES/conversion_utils.sh"
+source "$BASH_LIBRARIES/preprocessing_utils.sh"
+source "$BASH_LIBRARIES/artifact_rejection_utils.sh"
+source "$BASH_LIBRARIES/ica_utils.sh"
+source "$BASH_LIBRARIES/interpolation_utils.sh"
+source "$BASH_LIBRARIES/epochs_utils.sh"
+source "$BASH_LIBRARIES/ERN_analysis_utils.sh"
+
+# === Subject List ===
+subjects=("$@")
+if [ ${#subjects[@]} -eq 0 ]; then
+    subjects=($(find "$DATA_PATH" -maxdepth 1 -type d -name 'sub-*' -printf "%f\n"))
+fi
+
+print_banner "Running preprocessing for subjects: ${subjects[@]}"
+
+# For the first steps, loop through subjects
+for subj in "${subjects[@]}"; do
+    print_banner "===== Preprocessing $subj ====="   
+
+    # Initialize and get the path to the different subject dirs
+    init_subject_dirs "$subj"
+
+    results_file="$subj_dir/${subj}_task-${TASK_NAME}_eeg_desc-ERN_values.csv"
+
+    # Check if the results file already exist before running the pipeline
+    if [ ! -f "$results_file" ]; then
+
+        # === Step 1: SET to EDF to EEG conversion ===
+        ## 1.1: Convert the .set files to .edf files
+        convert_set_to_edf "$subj" "$log_dir"
+        if [ $? -eq 1 ]; then
+            echo "[.set to .edf] Failed for $subj"
+            continue
+        fi
+
+        ## 1.2: Conversion of .edf files to .eeg
+        if [ -d "$source_eeg_dir" ]; then
+            # Find .edf files in the EEG directory
+            edf_files=("$source_eeg_dir"/*task-$TASK_NAME*.edf)
+
+            # Check that one .edf files, and convert it to .eeg
+            # If more than one convert the first one
+            output_file=$(select_and_convert_edf "$subj" edf_files[@] "$source_eeg_dir" "$subj_dir")
+            if [ $? -eq 1 ]; then
+                echo "[.edf to .eeg] Failed for $subj"
+                continue
+            fi
+        else
+            echo "[.edf to .eeg] EEG directory not found for $subj, pass"
+            continue
+        fi
+
+        #  === Step 2: Preprocessing  ===
+
+        # 2.1: Apply high pass filtering   
+        output_hp_path=$(apply_highpass_filter "$output_file.eeg" "$output_dir")
+        if [ $? -eq 1 ]; then
+            echo "[High Pass Filtering] Failed for $subj"
+            continue
+        fi
+
+        # 2.2: Rereferencing
+        output_reref_path=$(apply_rereferencing "$output_hp_path" "$output_dir")
+        if [ $? -eq 1 ]; then
+            echo "[Rereferencing] Failed for $subj"
+            continue
+        fi
+        
+        # 2.3: 50Hz notch filtering   
+        output_notchfilt_path=$(apply_notch_filter "$output_reref_path" "$output_dir")
+        if [ $? -eq 1 ]; then
+            echo "[Notch filtering] Failed for $subj"
+            continue
+        fi
+
+        # 2.4: Low pass filtering at 40Hz
+        output_lp40filt_path=$(apply_lowpass_filter "$output_notchfilt_path" "$output_dir")
+        if [ $? -eq 1 ]; then
+            echo "[Low Pass Filtering] Failed for $subj"
+            continue
+        fi
+
+        # 2.5: Artificat rejection in window [-500;500]ms around Responses on the mastoids
+        artifact_rejection_mast "$output_lp40filt_path" "$subj" "$output_file"
+        exit_code=$?
+        if [ "$exit_code" -eq 1 ]; then
+            echo "[Mastoids Rejection] Failed for $subj."
+            continue
+        elif [ "$exit_code" -eq 3 ]; then
+            echo "[Mastoids Rejection] Skipping further processing for $subj due to exclusion."
+            continue
+        fi
+
+        # 2.6: Artificat rejection in window [-100;500]ms around Flanker on the EOG
+        output_rejflankerpos_path=$(artifact_rejection_flanker "$output_lp40filt_path" "$subj" "$output_file")
+        exit_code=$?
+        if [ "$exit_code" -eq 1 ]; then
+            echo "[Flanker Rejection] Failed for $subj."
+            continue
+        elif [ "$exit_code" -eq 3 ]; then
+            echo "[Flanker Rejection] Skipping further processing for $subj due to exclusion."
+            continue
+        fi
+
+
+        # 2.7: Perform ICA
+        output_icacor_path=$(perform_ica "$subj" "$output_file" "$output_lp40filt_path")
+        if [ $? -eq 1 ]; then
+            echo "[ICA] Skipping subject $subj due to error in ICA computation."
+            continue
+        fi
+
+        # 2.8: Artificat rejection in window [-500;500]ms around response
+        # Define rej.par.res filename
+        output_rejflankerposalltrial_path="$par_outdir/$(basename "$output_rejflankerpos_path" .pos)_alltrial.pos"
+        output_rejposrep_ica_path=$(artifact_rejection_post_ica "$subj" "$output_icacor_path.eeg" "$output_rejflankerposalltrial_path")
+        if [ $? -eq 1 ]; then
+            echo "[Response Rejection] Failed for $subj"
+            continue
+        fi
+
+        # 2.9: Interpolation
+        ## Detect interpolation channels
+        to_interpol=$(detect_interpolation_channels "$subj")
+        if [ $? -eq 1 ]; then
+            echo "[Interpolation Detection] Failed for $subj"
+            continue
+        fi
+        if [ "$to_interpol" == "True" ]; then
+            echo "[Interpolation] Interpolation will be applied for subject $subj"
+            ## Proceed to the interpolation
+            interpolate_output="$(interpolate_and_reject "$subj" "$output_icacor_path.eeg" "$output_file" "$output_rejflankerposalltrial_path")"
+            if [ $? -eq 1 ]; then
+                echo "[Interpolation] Failed for $subj" >&2
+                continue
+            fi
+            read -r interpolated_eeg_path output_rejposrep_eegspline_path <<< "$interpolate_output"
+        else
+            echo "[Interpolation] No interpolation needed for subject $subj"
+        fi
+            
+        # Step 2.10: Document rejection and interpolation
+        document_rejection_and_interpolation "$subj"
+        if [ $? -eq 1 ]; then
+            echo "[Documentation] Failed for $subj" >&2
+            continue
+        fi
+
+        #  === Step 3: Epochs Analysis  ===
+        # 3.1: Save single trials epochs
+        save_single_trial_epochs "$subj" "$to_interpol"
+        if [ $? -eq 1 ]; then
+            echo "[Single Trials Epochs] Failed for $subj" >&2
+            continue
+        fi
+
+        # 3.2: Compute epochs average
+        if [ "$to_interpol" = "True" ]; then
+            input_eeg="$interpolated_eeg_path"
+            input_pos="$output_rejposrep_eegspline_path"
+        else
+            input_eeg="$output_icacor_path.eeg"
+            input_pos="$output_rejposrep_ica_path"
+        fi
+        average_per_condition "$subj" "$input_eeg" "$input_pos"
+        if [ $? -eq 1 ]; then
+            echo "[Epoch Computation] Failed for $subj" >&2
+            continue
+        fi
+            
+        # 3.3: Extract ERN values
+        extract_ern_values "$subj"
+        if [ $? -eq 1 ]; then
+            echo "[ERN Extraction] Failed for $subj" >&2
+            continue
+        fi
+
+        # Make space: Delete the .eeg files not useful
+        find $output_dir -type f \( -name "*.eeg*" \) ! \( -name "*icacor.eeg*" -o -name "*eegspline.eeg*" -o -name "*lp40.eeg*" \) -exec rm -v {} +
+
+    else
+        echo "The results file for subject $subj already exists, skipping preprocessing."
+    fi
+
+done
+
+#  === Step 4: Statistical Analysis  ===
+run_stats_analysis
+if [ $? -eq 1 ]; then
+    echo "[Stats Analysis] Failed" >&2
+fi
+
+print_banner "Analysis complete."
+
+
+
+

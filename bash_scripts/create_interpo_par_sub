@@ -1,0 +1,174 @@
+#!/bin/bash
+
+source "$BASH_LIBRARIES/interpolation_utils.sh"
+
+# Function used to create s$subj.ses$ses.eegspline.par file automatically.
+# Example : bash create_interpo_file_sub_ses $sub_number $ses_number
+# It will ask the user to give the electrodes he want to interpolate
+
+# Variables
+output_file=$1  # Name of the output file
+
+# Path to the CSV file
+csv_file=$2
+echo $csv_file
+echo $output_file
+
+# Declare global variables to store the electrode and channel data
+electrode_array=()
+channel_number_array=()
+
+# Skip the first line (header) and read the second line from the CSV
+while IFS=";" read -r subject_name electrodes channel_numbers; do
+    # If it's the first line (header), skip it
+    if [[ "$subject_name" == "participant_id" ]]; then
+        continue
+    fi
+
+    electrodes_cleaned="${electrodes// /}"
+    channels_cleaned="${channel_numbers// /}"
+
+    # Split the electrodes and channel numbers into arrays (space-separated)
+    IFS="," read -r -a electrode_array <<< "$electrodes_cleaned"
+    IFS="," read -r -a channel_number_array <<< "$channels_cleaned"
+    
+    # Optionally, print the current subject's data (for debugging)
+    echo "participant_id: $subject_name"
+    echo "Channels to interpolate: ${electrode_array[*]}"
+    echo "Channel Numbers: ${channel_number_array[*]}"
+    echo "-----------------------------"
+    
+done < "$csv_file"  # Specify the input CSV file
+
+declare -A positions  # To store row/column positions of electrodes
+number_electrode=0
+
+for i in "${!electrode_array[@]}"; do
+    electrode="${electrode_array[$i]}"
+    if read -r line_num elec_num < <(get_elecnumber_par "$electrode"); then
+        elec_num=$(echo "$elec_num" | tr -d '\n' | tr -d '\r')  # Remove newlines
+        echo ""
+        echo "Electrode: $electrode"
+        echo "Line Number: $line_num"
+        echo "Electrode Number: $elec_num"
+        row=$(( (line_num - 1) / 10 + 1 ))  # Determine row (1-based index)
+        col=$(( (line_num - 1) % 10 ))      # Determine column (0-based index)
+        # Store the electrode number in the array
+        positions["$row,$col"]=$elec_num
+        number_electrode=$((number_electrode+1)) # The number of electrode to interpolate
+    else
+        echo "Error: Electrode '$electrode' not found"
+    fi
+done
+
+echo $positions
+
+# Create the content for the file
+{
+    echo "spline_channel_flag"
+
+    # Generate the matrix
+    for row in {1..6}; do
+        echo -n "		   "
+        for col in {0..9}; do
+            if [[ -n "${positions["$row,$col"]}" ]]; then
+                echo -n " 0"
+            else
+                echo -n " 1"
+            fi
+        done
+        echo ""
+    done
+
+    # Row 7: First 2 values can be 1, the rest should remain 0
+    echo -n "		   "
+    for col in {0..3}; do
+        if [[ -n "${positions[7,$col]}" ]]; then
+            echo -n " 0"
+        else
+            [[ $col -lt 2 ]] && echo -n " 1" || echo -n " 0"
+        fi
+    done
+    echo ""
+    echo ""
+    echo "spline_channel_out_nb 62"
+    echo ""
+    echo ""
+    echo "spline_channel_out_list"
+    # Generate the matrix
+    for row in {1..6}; do
+        echo -n "			"
+        for col in {0..9}; do
+            if [[ -n "${positions[$row,$col]}" ]]; then
+                val="${positions["$row,$col"]}"
+                if [ ${#val} -eq 3 ]; then
+                    printf " %s" "$val"
+                else
+                    printf "%3s" "$val"
+                fi
+            else
+                echo -n " -1"
+            fi
+        done
+        echo ""  # New line after each row
+    done
+    echo -n "			"
+    for col in {0..3}; do
+        if [[ -n "${positions[7,$col]}" ]]; then
+            val="${positions["7,$col"]}"
+            if [ ${#val} -eq 3 ]; then
+                printf "%s " "$val"
+            else
+                printf "%3s" "$val"
+            fi
+        else
+            [[ $col -lt 2 ]] && echo -n " -1" || echo -n "  0"
+        fi
+    done
+    echo ""
+    echo ""
+    echo ""
+    echo "original_channel_out_nb $((62 - $number_electrode))"
+    echo ""
+    echo "original_channel_out_list"
+    # Generate the matrix
+    echo -n "			 "
+    for col in {0..9}; do
+        if [[ -n "${positions[1,$col]}" ]]; then
+            echo -n "   "
+        else
+            echo -n "  $((col+1))"
+        fi
+    done
+    echo ""
+
+    for row in {2..6}; do
+        echo -n "			 "
+        for col in {0..9}; do
+            if [[ -n "${positions[$row,$col]}" ]]; then
+                echo -n "   "
+            else
+                echo -n " $(((col+1) + (row-1)*10))"
+            fi
+        done
+        echo ""
+    done
+    echo -n "			 "
+    for col in {0..3}; do
+        if [[ -n "${positions[7,$col]}" ]]; then
+            echo -n "   "
+        else
+            echo -n " $(((col+1) + (7-1)*10))"
+        fi
+    done
+    echo ""
+    echo ""
+    echo "spline_scd 0"
+    echo ""
+    echo "spline_order 3"
+    echo "spline_regul 1"
+    echo "spline_signal_offset  0"
+
+} > "$output_file"
+
+echo "File '$output_file' created."

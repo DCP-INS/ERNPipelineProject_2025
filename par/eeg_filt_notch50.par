@@ -1,0 +1,19 @@
+filter_channel 1 1 1 1 1 1 1 1 1 1
+	       1 1 1 1 1 1 1 1 1 1
+	       1 1 1 1 1 1 1 1 1 1
+	       1 1 1 1 1 1 1 1 1 1
+	       1 1 1 1 1 1 1 1 1 1
+	       1 1 1 1 1 1 1 1 1 1
+	       1 1 0 0
+
+filter_type 3
+
+filter_order 1
+
+filter_cutoff_freq1 45
+
+filter_cutoff_freq2 55
+
+
+
+   

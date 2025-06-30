@@ -1,0 +1,222 @@
+#!/bin/bash
+input_file=$1
+shift
+pos_file=$1
+shift
+output_pos=$1
+shift
+suj=$1
+shift
+outdir_suj=$1
+shift
+output_rej=$1
+shift
+
+mkdir $outdir_suj
+
+# Remove the old files if exists yet
+rm $outdir_suj/ERP/${suj}_desc-ERP_SlCR0.p $outdir_suj/ERP/${suj}_desc-ERP_SlCR33.p $outdir_suj/ERP/${suj}_desc-ERP_SlCR66.p $outdir_suj/ERP/${suj}_desc-ERP_SlCR100.p
+rm $outdir_suj/ERP/${suj}_desc-ERP_SlIR0.p $outdir_suj/ERP/${suj}_desc-ERP_SlIR33.p $outdir_suj/ERP/${suj}_desc-ERP_SlIR66.p $outdir_suj/ERP/${suj}_desc-ERP_SlIR100.p
+rm $outdir_suj/ERP/${suj}_desc-ERP_FaCR0.p $outdir_suj/ERP/${suj}_desc-ERP_FaCR33.p $outdir_suj/ERP/${suj}_desc-ERP_FaCR66.p $outdir_suj/ERP/${suj}_desc-ERP_FaCR100.p
+rm $outdir_suj/ERP/${suj}_desc-ERP_FaIR0.p $outdir_suj/ERP/${suj}_desc-ERP_FaIR33.p $outdir_suj/ERP/${suj}_desc-ERP_FaIR66.p $outdir_suj/ERP/${suj}_desc-ERP_FaIR100.p
+
+
+# Get the avg of the epochs on the different events
+eegavg $input_file $pos_file par/eegavg_ERP.par $output_pos
+exit_code=$?
+if [ $exit_code -ne 0 ] && [ $exit_code -ne 1 ]; then
+    echo -e "\n     [Epoch Computation] eegavg failed." >&2
+    exit 1
+fi
+
+# Make the directories
+mkdir -p "${outdir_suj}/ERN"
+mkdir -p "${outdir_suj}/ERP"
+
+# Move the ERP and rename them
+# Slow(=Sl) Correct(=C) Response(=R)
+cp ERP.106.p $outdir_suj/ERP/${suj}_desc-ERP_SlCR0.p
+cp ERP.116.p $outdir_suj/ERP/${suj}_desc-ERP_SlCR33.p
+cp ERP.126.p $outdir_suj/ERP/${suj}_desc-ERP_SlCR66.p
+cp ERP.136.p $outdir_suj/ERP/${suj}_desc-ERP_SlCR100.p
+
+# Slow(=Sl) Incorrect(=I) Response(=R)
+cp ERP.108.p $outdir_suj/ERP/${suj}_desc-ERP_SlIR0.p
+cp ERP.118.p $outdir_suj/ERP/${suj}_desc-ERP_SlIR33.p
+cp ERP.128.p $outdir_suj/ERP/${suj}_desc-ERP_SlIR66.p
+cp ERP.138.p $outdir_suj/ERP/${suj}_desc-ERP_SlIR100.p
+
+# Fast(=Fa) Correct(=C) Response(=R)
+cp ERP.107.p $outdir_suj/ERP/${suj}_desc-ERP_FaCR0.p
+cp ERP.117.p $outdir_suj/ERP/${suj}_desc-ERP_FaCR33.p
+cp ERP.127.p $outdir_suj/ERP/${suj}_desc-ERP_FaCR66.p
+cp ERP.137.p $outdir_suj/ERP/${suj}_desc-ERP_FaCR100.p
+
+# Fast(=Fa) Incorrect(=I) Response(=R)
+cp ERP.109.p $outdir_suj/ERP/${suj}_desc-ERP_FaIR0.p
+cp ERP.119.p $outdir_suj/ERP/${suj}_desc-ERP_FaIR33.p
+cp ERP.129.p $outdir_suj/ERP/${suj}_desc-ERP_FaIR66.p
+cp ERP.139.p $outdir_suj/ERP/${suj}_desc-ERP_FaIR100.p
+
+# For the correct and incorrect rep
+for rep in CR IR; do
+    # For the different response speed
+    for speed in Fa Sl; do
+
+        # Define the files needed to do the epavg SpeedRep
+        file0="$outdir_suj/ERP/${suj}_desc-ERP_${speed}${rep}0"
+        file33="$outdir_suj/ERP/${suj}_desc-ERP_${speed}${rep}33"
+        file66="$outdir_suj/ERP/${suj}_desc-ERP_${speed}${rep}66"
+        file100="$outdir_suj/ERP/${suj}_desc-ERP_${speed}${rep}100"
+
+        # Get a list with all the existing files
+        epavg_SpeedRep_all_congru_files=""
+        for file in "$file0" "$file33" "$file66" "$file100"; do
+            if [[ -f "$file.p" ]]; then
+	          epavg_SpeedRep_all_congru_files="${epavg_SpeedRep_all_congru_files}${file}\n"
+            fi
+        done
+
+        # Suppress the last \n to not have an empty line
+        epavg_SpeedRep_all_congru_files=$(echo -e "$epavg_SpeedRep_all_congru_files" | sed '/^$/d')
+
+        echo -e "$epavg_SpeedRep_all_congru_files"
+
+        # Remove if already exists
+        rm $outdir_suj/ERP/${suj}_desc-ERP_${speed}${rep}.p
+
+        # SpeedxRep
+        epavg <<!
+$outdir_suj/ERP/${suj}_desc-ERP_${speed}${rep}
+w
+$epavg_SpeedRep_all_congru_files
+
+
+!
+        exit_code=$?
+        if [ $exit_code -ne 255 ]; then
+            echo -e "\n     [Epoch Computation] epavg failed for $outdir_suj/ERP/${suj}_desc-ERP_${speed}${rep}.p." >&2
+            exit 1
+        fi
+    done
+
+    # Define the rep for both speed files
+    Sl_rep="$outdir_suj/ERP/${suj}_desc-ERP_Sl${rep}"
+    Fa_rep="$outdir_suj/ERP/${suj}_desc-ERP_Fa${rep}"
+
+    # Get a list with all the existing files
+    rep_epavg_allspeed_files=''
+    for file in $Sl_rep $Fa_rep; do
+        if [[ -f "$file.p" ]]; then
+            rep_epavg_allspeed_files="${rep_epavg_allspeed_files}${file}\n"
+        fi
+    done
+
+    # Suppress the last \n to not have an empty line
+    rep_epavg_allspeed_files=$(echo -e "$rep_epavg_allspeed_files" | sed '/^$/d')
+
+    # Remove if already exists
+    rm $outdir_suj/ERP/${suj}_desc-ERP_${rep}.p
+
+    echo -e "$rep_epavg_allspeed_files"
+
+    # Rep
+    epavg <<!
+$outdir_suj/ERP/${suj}_desc-ERP_${rep}
+w
+$rep_epavg_allspeed_files
+
+
+!
+
+    exit_code=$?
+    if [ $exit_code -ne 255 ]; then
+        echo -e "\n     [Epoch Computation] epavg failed for $outdir_suj/ERP/${suj}_desc-ERP_${rep}.p." >&2
+        exit 1
+    fi
+
+    # For the different congruency
+    for congru in '' 0 33 66 100; do
+
+        Sl_repcongru="$outdir_suj/ERP/${suj}_desc-ERP_Sl${rep}${congru}"
+        Fa_repcongru="$outdir_suj/ERP/${suj}_desc-ERP_Fa${rep}${congru}"
+
+        # Get a list with all the existing files
+        rep_epavg_repcongru_files=''
+        for file in $Sl_repcongru $Fa_repcongru; do
+            if [[ -f "$file.p" ]]; then
+                echo $file
+                rep_epavg_repcongru_files="${rep_epavg_repcongru_files}${file}\n"
+            fi
+        done
+
+        echo$rep_epavg_repcongru_files
+
+        # Suppress the last \n to not have an empty line
+        rep_epavg_repcongru_files=$(echo -e "$rep_epavg_repcongru_files" | sed '/^$/d')
+        echo $rep_epavg_repcongru_files
+
+
+        rm $outdir_suj/ERP/${suj}_desc-ERP_${rep}${congru}.p
+
+        epavg <<!
+$outdir_suj/ERP/${suj}_desc-ERP_${rep}${congru}
+w
+$rep_epavg_repcongru_files
+
+
+!
+
+        exit_code=$?
+        if [ $exit_code -ne 255 ]; then
+            echo -e "\n     [Epoch Computation] epavg failed for $outdir_suj/ERP/${suj}_desc-ERP_${rep}${congru}.p" >&2
+            exit 1
+        fi
+    done
+done
+
+
+# ERN
+# For the different congruency
+for congru in "" 0 33 66 100; do
+  # For the different response speed
+  for speed in "" Fa Sl; do
+    ir_file="$outdir_suj/ERP/${suj}_desc-ERP_${speed}IR${congru}"
+    cr_file="$outdir_suj/ERP/${suj}_desc-ERP_${speed}CR${congru}"
+    diff_file="$outdir_suj/ERN/${suj}_desc-ERN_${speed}IR-CR${congru}"
+
+    # Check if both input files exist
+    if [[ -f "$ir_file.p" && -f "$cr_file.p" ]]; then
+        # Remove previous diff file if it exists
+        [[ -f "$diff_file.p" ]] && rm "$diff_file.p"
+
+        # Do the diff
+        epdiff <<!
+$ir_file
+$cr_file
+$diff_file
+
+
+!
+
+        exit_code=$?
+        if [ $exit_code -ne 255 ]; then
+            echo -e "\n     [Epoch Computation] epdiff failed for $diff_file.p." >&2
+            exit 1
+        fi
+
+    else
+      echo "Skipping $speed IR${congru} vs CR${congru}: one or both files are missing."
+    fi
+  done
+done
+
+# Clean
+rm ERP.*.p
+
+# Move the par file
+mv par/eegavg_ERP.par.res $output_rej 
+
+
+
+
