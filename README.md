@@ -9,8 +9,24 @@ To run this pipeline successfully, you need to ensure that:
 
 ### Installing ELAN
 
-You can find installation instructions for ELAN at:
-➡️ *\[insert ELAN installation instructions or URL here]*
+* On Windows or MacOS you can use VirtualBox to create a Ubuntu 24-04-2 LTS virtual machine. 
+  * download and install [VirtualBox](https://www.virtualbox.org/wiki/Downloads)
+  * download Ubuntu 24-04-2 LTS installation [ubuntu-24.04.2-desktop-amd64.iso](https://releases.ubuntu.com/24.04.2/ubuntu-24.04.2-desktop-amd64.iso)
+  * create a new virtual machine 
+* On Linux (Ubuntu 24-04-2 LTS) : 
+  * install packages bzip2 gcc make perl git python3.12-venv liblapack3
+  * download and uncompress [Elan_ref_Ubuntu-24-x86.tgz](https://sdrive.cnrs.fr/s/wdkneMpL9nAzwYM/download/Elan_ref_Ubuntu-24-x86_64.tgz)
+  * configure your environment variables ELANPATH and PATH to point to Elan and Elan/bin directories  
+
+```bash
+wget https://sdrive.cnrs.fr/s/wdkneMpL9nAzwYM/download/Elan_ref_Ubuntu-24-x86_64.tgz
+tar xvfz Elan_ref_Ubuntu-24-x86_64.tgz
+export ELANPATH=${PWD}/Elan
+export PATH=${PATH}:${ELANPATH}/bin
+sudo apt install bzip2 gcc make perl git python3.12-venv liblapack3
+```
+
+
 
 ### Installing Python Dependencies
 
