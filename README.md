@@ -16,7 +16,8 @@ To run this pipeline successfully, you need to ensure that:
 * On Linux (Ubuntu 24-04-2 LTS) : 
   * install packages bzip2 gcc make perl git python3.12-venv liblapack3
   * download and uncompress [Elan_ref_Ubuntu-24-x86.tgz](https://sdrive.cnrs.fr/s/wdkneMpL9nAzwYM/download/Elan_ref_Ubuntu-24-x86_64.tgz)
-  * configure your environment variables ELANPATH and PATH to point to Elan and Elan/bin directories  
+  * configure your environment variables ELANPATH and PATH to point to Elan and Elan/bin directories 
+  * add packages libxm4 libquicktime2 and libhdf5-103-1t64 if you also use Elan viewers 
 
 ```bash
 wget https://sdrive.cnrs.fr/s/wdkneMpL9nAzwYM/download/Elan_ref_Ubuntu-24-x86_64.tgz
