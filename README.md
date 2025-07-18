@@ -9,8 +9,33 @@ To run this pipeline successfully, you need to ensure that:
 
 ### Installing ELAN
 
-You can find installation instructions for ELAN at:
-➡️ *\[insert ELAN installation instructions or URL here]*
+* On Windows or intel-based MacOS you can use VirtualBox to create a Ubuntu 24-04-2 LTS virtual machine. 
+   * download and install [VirtualBox](https://www.virtualbox.org/wiki/Downloads)
+   * download Ubuntu 24-04-2 LTS installation [ubuntu-24.04.2-desktop-amd64.iso](https://releases.ubuntu.com/24.04.2/ubuntu-24.04.2-desktop-amd64.iso)
+   * create a new virtual machine with at least 8G RAM 
+   * Install and start Ubuntu on your virtual machine
+   * In a terminal, type `sudo apt install bzip2`
+   * Use Virtualbox menu to install Guest Additions
+   * Reboot your Virtual Machine
+* On Linux (Ubuntu 24-04-2 LTS) : 
+   * You can copy-paste the following lines to install [Elan_ref_Ubuntu-24-x86.tgz](https://sdrive.cnrs.fr/s/wdkneMpL9nAzwYM/download/Elan_ref_Ubuntu-24-x86_64.tgz):
+   ```bash
+   # Install packages needed for this pipeline
+   sudo apt install gcc make perl git python3.12-venv liblapack3
+   # Add facultative packages for Elan viewers 
+   sudo apt install libxm4 libquicktime2 libhdf5-103-1t64
+   # download and uncompress Elan_ref_Ubuntu-24-x86.tgz
+   wget https://sdrive.cnrs.fr/s/wdkneMpL9nAzwYM/download/Elan_ref_Ubuntu-24-x86_64.tgz
+   tar xvfz Elan_ref_Ubuntu-24-x86_64.tgz
+   # configure your environment variables ELANPATH and PATH to point 
+   # to Elan and Elan/bin directories
+   export ELANPATH=${PWD}/Elan
+   export PATH=${PATH}:${ELANPATH}/bin
+   ```
+  
+
+
+
 
 ### Installing Python Dependencies
 
